@@ -351,38 +351,6 @@ class Task:
 
         return jsonify(tasks.serialize(purpose='listing'))
 
-    @login_required
-    @route('/task-<int:active_id>/-edit', methods=['POST'])
-    def edit_task(self):
-        """
-        Edit the task
-        """
-        Activity = Pool().get('nereid.activity')
-        Work = Pool().get('timesheet.work')
-
-        task = self.get_task(self.id)
-
-        Work.write([task.work], {
-            'name': request.form.get('name'),
-        })
-        self.write([task], {
-            'comment': request.form.get('comment')
-        })
-        Activity.create([{
-            'actor': current_user.id,
-            'object_': 'project.work, %d' % task.id,
-            'verb': 'edited_task',
-            'target': 'project.work, %d' % task.parent.id,
-            'project': task.parent.id,
-        }])
-        if request.is_xhr:
-            return jsonify({
-                'success': True,
-                'name': self.rec_name,
-                'comment': self.comment,
-            })
-        return redirect(request.referrer)
-
     def send_mail(self, receivers=None):
         """Send mail when task created.
 
@@ -507,14 +475,44 @@ class Task:
             states=PROGRESS_STATES[:-1]
         )
 
-    @classmethod
-    @route('/project-<int:project_id>/task-<int:task_id>')
+    @route('/tasks/<int:active_id>/', methods=['GET', 'POST', 'DELETE'])
     @login_required
-    def render_task(cls, task_id, project_id):
+    def render_task(self):
         """
-        Renders the task in a project
+        GET     /tasks/:id/         Return task details
+        POST    /tasks/:id/         Edit task
+            Param: name, comment
+        DELETE  /tasks/:id/         Delete task
         """
-        task = cls.get_task(task_id)
+        Activity = Pool().get('nereid.activity')
+        Work = Pool().get('timesheet.work')
+
+        task = self.get_task(self.id)
+
+        if request.method == "POST":
+            Work.write([task.work], {
+                'name': request.form.get('name'),
+            })
+            self.write([task], {
+                'comment': request.form.get('comment')
+            })
+            Activity.create([{
+                'actor': current_user.id,
+                'object_': 'project.work, %d' % task.id,
+                'verb': 'edited_task',
+                'target': 'project.work, %d' % task.parent.id,
+                'project': task.parent.id,
+            }])
+            return jsonify(message="Task has been edited successfully")
+
+        elif request.method == "DELETE":
+            if not current_user.is_admin_of_project(task.parent):
+                abort(403)
+
+            task.active = False
+            task.save()
+
+            return jsonify(message="Task has been deleted successfully")
 
         comments = sorted(
             task.history + task.work.timesheet_lines + task.attachments +
@@ -526,19 +524,14 @@ class Task:
             hours[line.employee] = hours.setdefault(line.employee, 0) + \
                 line.hours
 
-        if request.is_xhr:
-            response = cls.serialize(task)
-            with Transaction().set_context(task=task_id):
-                response['comments'] = [
-                    comment.serialize('listing') for comment in comments
-                ]
-            return jsonify(response)
+        response = task.serialize()
 
-        return render_template(
-            'project/task.jinja', task=task,
-            active_type_name='render_task_list', project=task.parent,
-            comments=comments, timesheet_summary=hours
-        )
+        with Transaction().set_context(task=self.id):
+            response['comments'] = [
+                comment.serialize('listing') for comment in comments
+            ]
+
+        return jsonify(response)
 
     @classmethod
     @route('/tasks-by-employee')
@@ -874,41 +867,6 @@ class Task:
         flash("The constraint dates have been changed for this task.")
         return redirect(request.referrer)
 
-    @classmethod
-    @route('/task-<int:task_id>/-delete', methods=['POST'])
-    @login_required
-    def delete_task(cls, task_id):
-        """
-        Delete the task from project
-
-        Tasks can be deleted only if
-            1. The user is project admin
-            2. The user is an admin member in the project
-
-        :param task_id: Id of the task to be deleted
-        """
-        task = cls.get_task(task_id)
-
-        # Check if user is among the project admins
-        if not current_user.is_admin_of_project(task.parent):
-            flash(
-                "Sorry! You are not allowed to delete tasks. \
-                Contact your project admin for the same."
-            )
-            return redirect(request.referrer)
-
-        cls.write([task], {'active': False})
-
-        if request.is_xhr:
-            return jsonify({
-                'success': True,
-            })
-
-        flash("The task has been deleted")
-        return redirect(
-            url_for('project.work.render_project', project_id=task.parent.id)
-        )
-
     @login_required
     @route(
         '/task-<int:active_id>/change-estimated-hours', methods=['GET', 'POST']
@@ -930,13 +888,10 @@ class Task:
         flash("The estimated hours have been changed for this task.")
         return redirect(request.referrer)
 
-    @route(
-        '/task-<int:active_id>/move-to-project-<int:project_id>',
-        methods=['POST']
-    )
+    @route('/tasks/<int:active_id>/move', methods=['POST'])
     @login_required
     @permissions_required(perm_any=['project.admin', 'project.manager'])
-    def move_task_to_project(self, project_id):
+    def move_task_to_project(self):
         """
         Move task from one project to another.
         """
@@ -946,12 +901,11 @@ class Task:
 
         try:
             target_project, = ProjectWork.search([
-                ('id', '=', project_id),
+                ('id', '=', request.values.get('project')),
                 ('type', '=', 'project')
             ], limit=1)
         except ValueError:
-            flash("No project found with given details")
-            return redirect(request.referrer)
+            return jsonify(message="Invalid project"), 400
 
         if not (
             current_user.is_admin_of_project(self.parent) and
@@ -960,8 +914,7 @@ class Task:
             abort(403)
 
         if self.parent.id == target_project.id:
-            flash("Task already in this project")
-            return redirect(request.referrer)
+            return jsonify(message="Task already belongs to project"), 400
 
         if self.assigned_to not in [
             member.user for member in target_project.members
@@ -972,12 +925,4 @@ class Task:
         self.parent = target_project.id
         self.save()
 
-        flash("Task #%d successfully moved to project %s" % (
-            self.id, target_project.work.name
-        ))
-        return redirect(
-            url_for(
-                'project.work.render_task',
-                project_id=target_project.id, task_id=self.id
-            )
-        )
+        return jsonify(message="Task successfully moved to project")

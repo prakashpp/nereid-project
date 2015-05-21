@@ -443,8 +443,7 @@ class Project:
                 self.created_by.serialize('listing')
             value['displayName'] = '#%d' % self.id
             value['url'] = url_for(
-                'project.work.render_task', project_id=self.parent.id,
-                task_id=self.id,
+                'project.work.render_task', active_id=self.id,
             )
         elif purpose == 'activity_stream':
             value['create_date'] = self.create_date.isoformat()
@@ -463,8 +462,7 @@ class Project:
             ]
             # TODO: Convert self.parent to self.project
             value['url'] = url_for(
-                'project.work.render_task', project_id=self.parent.id,
-                task_id=self.id,
+                'project.work.render_task', active_id=self.id,
             )
         return value
 
@@ -1596,8 +1594,7 @@ class ProjectHistory(ModelSQL, ModelView):
         return {
             "create_date": self.create_date.isoformat(),
             "url": url_for(
-                'project.work.render_task', project_id=self.project.parent.id,
-                task_id=self.project.id,
+                'project.work.render_task', active_id=self.project.id,
             ),
             'updatedBy': self.updated_by.serialize('listing'),
             "objectType": self.__name__,

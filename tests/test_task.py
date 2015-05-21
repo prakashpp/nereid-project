@@ -81,7 +81,7 @@ class TestTask(TestBase):
 
                 # Edit Task
                 response = c.post(
-                    '/task-%d/-edit' % self.task1.id,
+                    '/tasks/%d/' % self.task1.id,
                     data={
                         'name': 'ABC_task',
                         'comment': 'task_desc2',
@@ -89,9 +89,6 @@ class TestTask(TestBase):
                     headers=self.xhr_header,
                 )
                 self.assertEqual(response.status_code, 200)
-
-                self.assertTrue(json.loads(response.data)['success'])
-                self.assertEqual(self.task1.comment, 'task_desc2')
 
     def test_0030_watch_unwatch(self):
         """
@@ -549,13 +546,8 @@ class TestTask(TestBase):
                 response = self.login(c, self.reg_user1.email, 'password')
 
                 # Render_task
-                response = c.get(
-                    '/project-%d/task-%d' % (
-                        self.task1.parent.id, self.task1.id
-                    )
-                )
+                response = c.get('/tasks/%d/' % self.task1.id)
                 self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.data, str(self.task1.id))
 
     def test_0170_update_comment(self):
         """
@@ -639,11 +631,11 @@ class TestTask(TestBase):
                     3
                 )
                 # Delete_task
-                response = c.post(
-                    '/task-%d/-delete' % self.task1.id,
+                response = c.delete(
+                    '/tasks/%d/' % self.task1.id,
                     headers=self.xhr_header
                 )
-                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.status_code, 403)
 
                 # Task is not deleted
                 self.assertEqual(
@@ -676,13 +668,11 @@ class TestTask(TestBase):
                     3
                 )
                 # Delete_task
-                response = c.post(
-                    '/task-%d/-delete' % self.task1.id,
+                response = c.delete(
+                    '/tasks/%d/' % self.task1.id,
                     headers=self.xhr_header
                 )
                 self.assertEqual(response.status_code, 200)
-
-                self.assertTrue(json.loads(response.data)['success'])
 
                 # Total tasks before deletion are 3 after deletion 2
                 self.assertEqual(
@@ -706,13 +696,11 @@ class TestTask(TestBase):
                     2
                 )
                 # Delete_task
-                response = c.post(
-                    '/task-%d/-delete' % self.task2.id,
+                response = c.delete(
+                    '/tasks/%d/' % self.task2.id,
                     headers=self.xhr_header
                 )
                 self.assertEqual(response.status_code, 200)
-
-                self.assertTrue(json.loads(response.data)['success'])
 
                 # Total tasks before deletion are 2, after deletion 1
                 self.assertEqual(
@@ -960,11 +948,10 @@ class TestTask(TestBase):
                 )
 
                 response = c.post(
-                    '/task-%d/move-to-project-%d' % (
-                        self.task1.id, test_project.id,
-                    ),
+                    '/tasks/%d/move' % self.task1.id,
+                    data={'project': test_project.id}
                 )
-                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.status_code, 200)
 
                 # Test if the task has moved to test_project
                 self.assertEqual(self.task1.parent.id, test_project.id)
@@ -978,9 +965,8 @@ class TestTask(TestBase):
                 )
 
                 response = c.post(
-                    '/task-%d/move-to-project-%d' % (
-                        self.task1.id, self.project1.id,
-                    ),
+                    '/tasks/%d/move' % self.task1.id,
+                    data={'project': test_project.id}
                 )
                 # Check if 403 is raised as user doesn't have permission
                 self.assertEqual(response.status_code, 403)
@@ -1008,11 +994,10 @@ class TestTask(TestBase):
                 })
 
                 response = c.post(
-                    '/task-%d/move-to-project-%d' % (
-                        self.task1.id, self.project1.id,
-                    ),
+                    '/tasks/%d/move' % self.task1.id,
+                    data={'project': self.project1.id},
                 )
-                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.status_code, 200)
 
                 # Test if the task has moved to project1
                 self.assertEqual(self.task1.parent.id, self.project1.id)
@@ -1026,9 +1011,8 @@ class TestTask(TestBase):
                 )
 
                 response = c.post(
-                    '/task-%d/move-to-project-%d' % (
-                        self.task1.id, test_project.id,
-                    ),
+                    '/tasks/%d/move' % self.task1.id,
+                    data={'project': test_project.id}
                 )
                 self.assertEqual(response.status_code, 403)
                 # Test if the task has not moved to test_project
@@ -1054,11 +1038,10 @@ class TestTask(TestBase):
 
                 # Move task2 to test_project
                 response = c.post(
-                    '/task-%d/move-to-project-%d' % (
-                        self.task2.id, test_project.id,
-                    ),
+                    '/tasks/%d/move' % self.task2.id,
+                    data={'project': test_project.id},
                 )
-                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.status_code, 200)
 
                 # Test if the task has moved to test_project
                 self.assertEqual(self.task2.parent.id, test_project.id)
